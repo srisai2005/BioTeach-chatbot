@@ -11,10 +11,14 @@ const starterPrompts = [
 ];
 
 type Mode = 'general' | 'explain' | 'quiz' | 'flashcards' | 'plan';
+type WorkspaceView = 'study' | 'notes' | 'practice';
+type Topic = 'general' | 'photosynthesis' | 'enzymes' | 'inheritance';
 
 export default function HomePage() {
   const [mode, setMode] = useState<Mode>('general');
   const [quizStyle, setQuizStyle] = useState<'options' | 'freeform'>('options');
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('study');
+  const [selectedTopic, setSelectedTopic] = useState<Topic>('general');
   const { messages, input: chatInput, handleInputChange, handleSubmit, setInput, setMessages, isLoading, error } = useChat({
     api: '/api/chat',
     body: { mode, quizStyle },
@@ -34,6 +38,60 @@ export default function HomePage() {
         return 'General';
     }
   }, [mode]);
+
+  const activeTopicLabel = useMemo(() => {
+    switch (selectedTopic) {
+      case 'photosynthesis':
+        return 'Photosynthesis';
+      case 'enzymes':
+        return 'Enzymes';
+      case 'inheritance':
+        return 'Inheritance';
+      default:
+        return 'General Biology';
+    }
+  }, [selectedTopic]);
+
+  const latestUserMessage = useMemo(() => {
+    const reversed = [...messages].reverse();
+    return reversed.find((message) => message.role === 'user')?.content || '';
+  }, [messages]);
+
+  const contextPreview = useMemo(() => {
+    const topicText = activeTopicLabel.toLowerCase();
+    switch (workspaceView) {
+      case 'notes':
+        return {
+          insight: `Revision notes mode for ${topicText}`,
+          title: 'Revision note prompt',
+          body: `Turn ${topicText} into a concise set of revision notes, quick facts, and memory hooks.`,
+          action: `Summarise ${topicText} into revision notes`,
+        };
+      case 'practice':
+        return {
+          insight: `Practice mode for ${topicText}`,
+          title: 'Practice prompt',
+          body: `Create a short quiz, recall drill, or exam-style challenge for ${topicText}.`,
+          action: `Give me a quiz on ${topicText}`,
+        };
+      default:
+        return {
+          insight: mode === 'quiz' ? 'Quiz mode is active' : `Study stream focused on ${topicText}`,
+          title: 'Next best step',
+          body: latestUserMessage
+            ? `You recently asked about ${latestUserMessage}. Maya can explain it, quiz you on it, or turn it into notes.`
+            : `Ask Maya to explain ${topicText}, test you with questions, or build flashcards.`,
+          action: mode === 'quiz' ? `Answer the current quiz question for ${topicText}` : `Explain ${topicText} in simple steps`,
+        };
+    }
+  }, [activeTopicLabel, latestUserMessage, mode, workspaceView]);
+
+  const composerPlaceholder = useMemo(() => {
+    if (mode === 'quiz') return 'Answer the current quiz question…';
+    if (workspaceView === 'notes') return `Create revision notes for ${activeTopicLabel}...`;
+    if (workspaceView === 'practice') return `Practice ${activeTopicLabel} with a quiz...`;
+    return `Ask Maya about ${activeTopicLabel}...`;
+  }, [activeTopicLabel, mode, workspaceView]);
 
   const submitWithMode = (value: string) => {
     const nextMode = detectMode(value);
@@ -63,6 +121,11 @@ export default function HomePage() {
     handleSubmit(syntheticEvent as never);
   };
 
+  const selectTopic = (topic: Topic, view: WorkspaceView = 'study') => {
+    setSelectedTopic(topic);
+    setWorkspaceView(view);
+  };
+
   return (
     <main className="shell">
       <aside className="sidebar">
@@ -76,23 +139,23 @@ export default function HomePage() {
 
         <div className="nav-section">
           <div className="nav-title">Workspace</div>
-          <button className="nav-item active">Study Stream</button>
-          <button className="nav-item">Revision Notes</button>
-          <button className="nav-item">Practice Sets</button>
+          <button className={`nav-item ${workspaceView === 'study' ? 'active' : ''}`} onClick={() => setWorkspaceView('study')}>Study Stream</button>
+          <button className={`nav-item ${workspaceView === 'notes' ? 'active' : ''}`} onClick={() => setWorkspaceView('notes')}>Revision Notes</button>
+          <button className={`nav-item ${workspaceView === 'practice' ? 'active' : ''}`} onClick={() => setWorkspaceView('practice')}>Practice Sets</button>
         </div>
 
         <div className="nav-section" style={{ flex: 1 }}>
           <div className="nav-title">Threads</div>
-          <div className="thread-item">Photosynthesis</div>
-          <div className="thread-item">Enzymes</div>
-          <div className="thread-item">Inheritance</div>
+          <button className={`thread-item ${selectedTopic === 'photosynthesis' ? 'selected' : ''}`} onClick={() => selectTopic('photosynthesis')}>Photosynthesis</button>
+          <button className={`thread-item ${selectedTopic === 'enzymes' ? 'selected' : ''}`} onClick={() => selectTopic('enzymes')}>Enzymes</button>
+          <button className={`thread-item ${selectedTopic === 'inheritance' ? 'selected' : ''}`} onClick={() => selectTopic('inheritance')}>Inheritance</button>
         </div>
 
         <div className="profile-card">
           <div className="profile-dot" />
           <div>
             <div className="title">Student</div>
-            <div className="subtitle">Ready for top grades</div>
+            <div className="subtitle">Focused on {activeTopicLabel}</div>
           </div>
         </div>
       </aside>
@@ -159,7 +222,7 @@ export default function HomePage() {
           <input
             value={chatInput}
             onChange={handleInputChange}
-            placeholder="Ask Maya anything about GCSE Biology..."
+            placeholder={composerPlaceholder}
             className="composer-input"
           />
           <button type="submit" className="send-btn">➜</button>
@@ -172,12 +235,19 @@ export default function HomePage() {
           <div className="panel-body">
             <div className="mini-card">
               <div className="mini-label">Live Insight</div>
-              <div className="mini-value">Question mode active</div>
+              <div className="mini-value">{contextPreview.insight}</div>
+            </div>
+            <div className="mini-card">
+              <div className="mini-label">Active Focus</div>
+              <div className="mini-value">{activeTopicLabel}</div>
             </div>
             <div className="mini-card code-card">
-              <div className="mini-label">Response Preview</div>
-              <pre>{activeModeLabel === 'Quiz' ? 'A/B/C options will be evaluated automatically.' : 'A premium explanation or study plan will appear here.'}</pre>
+              <div className="mini-label">{contextPreview.title}</div>
+              <pre>{contextPreview.body}</pre>
             </div>
+            <button className="context-action" onClick={() => setInput(contextPreview.action)}>
+              Use this prompt
+            </button>
           </div>
         </div>
       </aside>
@@ -214,11 +284,13 @@ export default function HomePage() {
         .subtitle { color: #9aa1ab; font-size: 0.9rem; }
         .nav-section { display: flex; flex-direction: column; gap: 8px; }
         .nav-title { color: #7c8795; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.15em; }
-        .nav-item, .thread-item, .starter-pill, .assistant-actions button, .ghost-btn {
+        .nav-item, .thread-item, .starter-pill, .ghost-btn {
           border: 0; background: transparent; color: #f5f7fb; text-align: left; cursor: pointer;
         }
         .nav-item.active { color: #8b5cf6; }
-        .thread-item { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,0.03); }
+        .thread-item { padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,0.03); width: 100%; }
+        .thread-item.selected { background: linear-gradient(135deg, rgba(124, 58, 237, 0.35), rgba(20, 184, 166, 0.24)); color: white; }
+        .profile-dot { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #14b8a6); }
         .center-panel { display: flex; flex-direction: column; min-height: 100vh; padding: 24px 24px 20px; }
         .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .ghost-btn { padding: 10px 14px; border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; }
@@ -247,6 +319,7 @@ export default function HomePage() {
         .mini-card { padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); }
         .mini-label { font-size: 0.78rem; text-transform: uppercase; color: #7c8795; margin-bottom: 4px; }
         .mini-value { color: #f5f7fb; }
+        .context-action { margin-top: 4px; padding: 10px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); color: #f5f7fb; cursor: pointer; }
         .code-card pre { margin: 0; color: #cbd5e1; font-size: 0.9rem; white-space: pre-wrap; }
         @media (max-width: 1100px) { .shell { grid-template-columns: 1fr; } .sidebar, .right-panel { display: none; } }
       `}</style>
